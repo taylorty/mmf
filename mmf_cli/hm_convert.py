@@ -49,20 +49,16 @@ class HMConverter:
             files_needed = self.JSONL_PHASE_TWO_FILES
             for file in files_needed:
                 assert PathManager.exists(
-                    os.path.join(folder, "data", file)
+                    os.path.join(folder, file)
                 ), f"{file} doesn't exist in {folder}"
         else:
-            warnings.warn(
-                "You are on Phase 1 of the Hateful Memes Challenge. "
-                "Please update to Phase 2"
-            )
+            warnings.warn("You are on Phase 1 of the Hateful Memes Challenge. Please update to Phase 2")
 
         files_needed = self.IMAGE_FILES
-
         exists = False
 
         for file in files_needed:
-            exists = exists or PathManager.exists(os.path.join(folder, "data", file))
+            exists = exists or PathManager.exists(os.path.join(folder, file))
 
         if not exists:
             raise AssertionError("Neither img or img.tar.gz exists in current zip")
@@ -72,40 +68,16 @@ class HMConverter:
     def get_parser(self):
         parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-        parser.add_argument(
-            "--zip_file",
-            required=True,
-            type=str,
-            help="Zip file downloaded from the DrivenData",
-        )
+        parser.add_argument("--zip_file",
+                            required=True, type=str, help="Zip file downloaded from the DrivenData")
+        parser.add_argument("--move",
+                            required=None, type=int, help="Move data dir to mmf cache dir")
 
-        parser.add_argument(
-            "--password", required=True, type=str, help="Password for the zip file"
-        )
-        parser.add_argument(
-            "--move", required=None, type=int, help="Move data dir to mmf cache dir"
-        )
-        parser.add_argument(
-            "--mmf_data_folder", required=None, type=str, help="MMF Data folder"
-        )
-        parser.add_argument(
-            "--bypass_checksum",
-            required=None,
-            type=int,
-            help="Pass 1 if you want to skip checksum",
-        )
         return parser
 
     def convert(self):
         config = self.configuration.get_config()
         data_dir = config.env.data_dir
-
-        if self.args.mmf_data_folder:
-            data_dir = self.args.mmf_data_folder
-
-        bypass_checksum = False
-        if self.args.bypass_checksum:
-            bypass_checksum = bool(self.args.bypass_checksum)
 
         print(f"Data folder is {data_dir}")
         print(f"Zip path is {self.args.zip_file}")
@@ -119,9 +91,6 @@ class HMConverter:
         if self.args.move:
             move_dir = bool(self.args.move)
 
-        if not bypass_checksum:
-            self.checksum(self.args.zip_file, self.POSSIBLE_CHECKSUMS)
-
         src = self.args.zip_file
         dest = images_path
         if move_dir:
@@ -133,10 +102,10 @@ class HMConverter:
 
         print(f"Unzipping {src}")
         self.decompress_zip(
-            dest, fname=os.path.basename(src), password=self.args.password
+            dest, fname=os.path.basename(src),
         )
 
-        phase_one = self.assert_files(images_path)
+        phase_one = self.assert_files(os.path.join(images_path, "hateful_memes"))
 
         annotations_path = os.path.join(base_path, "annotations")
         PathManager.mkdirs(annotations_path)
@@ -148,55 +117,32 @@ class HMConverter:
 
         for annotation in annotations:
             print(f"Moving {annotation}")
-            src = os.path.join(images_path, "data", annotation)
+            src = os.path.join(images_path, "hateful_memes", annotation)
             dest = os.path.join(annotations_path, annotation)
             move(src, dest)
 
         images = self.IMAGE_FILES
 
         for image_file in images:
-            src = os.path.join(images_path, "data", image_file)
+            src = os.path.join(images_path, "hateful_memes", image_file)
             if PathManager.exists(src):
                 print(f"Moving {image_file}")
             else:
                 continue
             dest = os.path.join(images_path, image_file)
             move(src, dest)
-            if src.endswith(".tar.gz"):
-                decompress(dest, fname=image_file, delete_original=False)
 
-    def checksum(self, file, hashes):
-        sha256_hash = hashlib.sha256()
-        destination = file
-
-        with PathManager.open(destination, "rb") as f:
-            print("Starting checksum for {}".format(os.path.basename(file)))
-            for byte_block in iter(lambda: f.read(65536), b""):
-                sha256_hash.update(byte_block)
-            if sha256_hash.hexdigest() not in hashes:
-                # remove_dir(download_path)
-                raise AssertionError(
-                    f"Checksum of downloaded file does not match the expected "
-                    + "checksum. Please try again."
-                )
-            else:
-                print("Checksum successful")
-
-    def decompress_zip(self, dest, fname, password=None):
+    def decompress_zip(self, dest, fname):
         path = os.path.join(dest, fname)
         print("Extracting the zip can take time. Sit back and relax.")
         try:
             # Python's zip file module is very slow with password encrypted files
             # Try command line
             command = ["unzip", "-o", "-q", "-d", dest]
-            if password:
-                command += ["-P", password]
             command += [path]
             subprocess.run(command, check=True)
         except Exception:
             obj = zipfile.ZipFile(path, "r")
-            if password:
-                obj.setpassword(password.encode("utf-8"))
             obj.extractall(path=dest)
             obj.close()
 
